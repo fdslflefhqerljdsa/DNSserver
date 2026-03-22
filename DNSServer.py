@@ -6,6 +6,7 @@ import dns.rdtypes.ANY
 from dns.rdtypes.ANY.MX import MX
 from dns.rdtypes.ANY.SOA import SOA
 import dns.rdata
+import dns.rrset
 import socket
 import threading
 import signal
@@ -17,7 +18,6 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
-import ast
 
 def generate_aes_key(password, salt):
     kdf = PBKDF2HMAC(
@@ -94,7 +94,7 @@ dns_records = {
         dns.rdatatype.AAAA: '2001:0db8:85a3:0000:0000:8a2e:0373:7312',
         dns.rdatatype.MX: [(10, 'mxa-00256a01.gslb.pphosted.com.')],
         dns.rdatatype.NS: 'ns1.nyu.edu.',
-        dns.rdatatype.TXT: (encrypted_value,),
+        dns.rdatatype.TXT: (encrypted_value.decode(),),
     },
 }
 
@@ -126,6 +126,15 @@ def run_dns_server():
                     rdata = SOA(dns.rdataclass.IN, dns.rdatatype.SOA,
                                 mname, rname, serial, refresh, retry, expire, minimum)
                     rdata_list.append(rdata)
+
+                elif qtype == dns.rdatatype.TXT:
+                    rdata_list = [
+                        dns.rdata.from_text(
+                            dns.rdataclass.IN,
+                            dns.rdatatype.TXT,
+                            f'"{answer_data[0]}"'
+                        )
+                    ]
 
                 else:
                     if isinstance(answer_data, str):
