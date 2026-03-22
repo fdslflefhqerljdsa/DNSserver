@@ -6,7 +6,6 @@ import dns.rdtypes.ANY
 from dns.rdtypes.ANY.MX import MX
 from dns.rdtypes.ANY.SOA import SOA
 import dns.rdata
-import dns.rrset
 import socket
 import threading
 import signal
@@ -43,20 +42,18 @@ def decrypt_with_aes(encrypted_data, password, salt):
     decrypted_data = f.decrypt(encrypted_data)
     return decrypted_data.decode('utf-8')
 
-# 🔐 REQUIRED PARAMETERS
-salt = b'Tandon'
+salt = b"Tandon"
 password = "bm4026@nyu.edu"
 input_string = "AlwaysWatching"
 
-# Encrypt once and store as string
-encrypted_value = encrypt_with_aes(input_string, password, salt).decode('utf-8')
+encrypted_value = encrypt_with_aes(input_string, password, salt)
+decrypted_value = decrypt_with_aes(encrypted_value, password, salt)
 
 def generate_sha256_hash(input_string):
     sha256_hash = hashlib.sha256()
     sha256_hash.update(input_string.encode('utf-8'))
     return sha256_hash.hexdigest()
 
-# 🌐 DNS RECORDS (EXACTLY AS REQUIRED)
 dns_records = {
     'example.com.': {
         dns.rdatatype.A: '192.168.1.101',
@@ -97,17 +94,18 @@ dns_records = {
         dns.rdatatype.AAAA: '2001:0db8:85a3:0000:0000:8a2e:0373:7312',
         dns.rdatatype.MX: [(10, 'mxa-00256a01.gslb.pphosted.com.')],
         dns.rdatatype.NS: 'ns1.nyu.edu.',
-        dns.rdatatype.TXT: (encrypted_value,),
+        dns.rdatatype.TXT: (encrypted_value.decode('utf-8'),),
     },
 }
 
 def run_dns_server():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    server_socket.bind(('127.0.0.1', 53))
+    server_socket.bind(("127.0.0.1", 53))
 
     while True:
         try:
             data, addr = server_socket.recvfrom(1024)
+
             request = dns.message.from_wire(data)
             response = dns.message.make_response(request)
 
@@ -117,7 +115,6 @@ def run_dns_server():
 
             if qname in dns_records and qtype in dns_records[qname]:
                 answer_data = dns_records[qname][qtype]
-
                 rdata_list = []
 
                 if qtype == dns.rdatatype.MX:
@@ -126,32 +123,24 @@ def run_dns_server():
 
                 elif qtype == dns.rdatatype.SOA:
                     mname, rname, serial, refresh, retry, expire, minimum = answer_data
-                    rdata = SOA(
-                        dns.rdataclass.IN,
-                        dns.rdatatype.SOA,
-                        mname, rname, serial, refresh, retry, expire, minimum
-                    )
+                    rdata = SOA(dns.rdataclass.IN, dns.rdatatype.SOA,
+                                mname, rname, serial, refresh, retry, expire, minimum)
                     rdata_list.append(rdata)
 
                 else:
                     if isinstance(answer_data, str):
                         rdata_list = [dns.rdata.from_text(dns.rdataclass.IN, qtype, answer_data)]
                     else:
-                        rdata_list = [
-                            dns.rdata.from_text(dns.rdataclass.IN, qtype, data)
-                            for data in answer_data
-                        ]
-
-                rrset = dns.rrset.RRset(question.name, dns.rdataclass.IN, qtype)
-                rrset.ttl = 300
+                        rdata_list = [dns.rdata.from_text(dns.rdataclass.IN, qtype, data)
+                                      for data in answer_data]
 
                 for rdata in rdata_list:
-                    rrset.add(rdata)
+                    response.answer.append(
+                        dns.rrset.RRset(question.name, dns.rdataclass.IN, qtype)
+                    )
+                    response.answer[-1].add(rdata)
 
-                response.answer.append(rrset)
-
-            # Set Authoritative Answer (AA) flag
-            response.flags |= 1 << 10
+            response.flags |= 1 << 10  # AA flag
 
             print("Responding to request:", qname)
             server_socket.sendto(response.to_wire(), addr)
@@ -160,7 +149,6 @@ def run_dns_server():
             print('\nExiting...')
             server_socket.close()
             sys.exit(0)
-
 
 def run_dns_server_user():
     print("Input 'q' and hit 'enter' to quit")
@@ -177,7 +165,6 @@ def run_dns_server_user():
     input_thread.daemon = True
     input_thread.start()
     run_dns_server()
-
 
 if __name__ == '__main__':
     run_dns_server_user()
