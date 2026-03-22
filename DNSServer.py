@@ -6,6 +6,7 @@ import dns.rdtypes.ANY
 from dns.rdtypes.ANY.MX import MX
 from dns.rdtypes.ANY.SOA import SOA
 import dns.rdata
+import dns.rrset
 import socket
 import threading
 import signal
@@ -42,18 +43,20 @@ def decrypt_with_aes(encrypted_data, password, salt):
     decrypted_data = f.decrypt(encrypted_data)
     return decrypted_data.decode('utf-8')
 
-salt = b'somesalt'
-password = "mypassword"
-input_string = "hello_world"
+# 🔐 REQUIRED PARAMETERS
+salt = b'Tandon'
+password = "bm4026@nyu.edu"
+input_string = "AlwaysWatching"
 
-encrypted_value = encrypt_with_aes(input_string, password, salt)
-decrypted_value = decrypt_with_aes(encrypted_value, password, salt)
+# Encrypt once and store as string
+encrypted_value = encrypt_with_aes(input_string, password, salt).decode('utf-8')
 
 def generate_sha256_hash(input_string):
     sha256_hash = hashlib.sha256()
     sha256_hash.update(input_string.encode('utf-8'))
     return sha256_hash.hexdigest()
 
+# 🌐 DNS RECORDS (EXACTLY AS REQUIRED)
 dns_records = {
     'example.com.': {
         dns.rdatatype.A: '192.168.1.101',
@@ -71,6 +74,30 @@ dns_records = {
             604800,
             86400,
         ),
+    },
+
+    'safebank.com.': {
+        dns.rdatatype.A: '192.168.1.102',
+    },
+
+    'google.com.': {
+        dns.rdatatype.A: '192.168.1.103',
+    },
+
+    'legitsite.com.': {
+        dns.rdatatype.A: '192.168.1.104',
+    },
+
+    'yahoo.com.': {
+        dns.rdatatype.A: '192.168.1.105',
+    },
+
+    'nyu.edu.': {
+        dns.rdatatype.A: '192.168.1.106',
+        dns.rdatatype.AAAA: '2001:0db8:85a3:0000:0000:8a2e:0373:7312',
+        dns.rdatatype.MX: [(10, 'mxa-00256a01.gslb.pphosted.com.')],
+        dns.rdatatype.NS: 'ns1.nyu.edu.',
+        dns.rdatatype.TXT: (encrypted_value,),
     },
 }
 
@@ -96,20 +123,34 @@ def run_dns_server():
                 if qtype == dns.rdatatype.MX:
                     for pref, server in answer_data:
                         rdata_list.append(MX(dns.rdataclass.IN, dns.rdatatype.MX, pref, server))
+
                 elif qtype == dns.rdatatype.SOA:
                     mname, rname, serial, refresh, retry, expire, minimum = answer_data
-                    rdata = SOA(dns.rdataclass.IN, dns.rdatatype.SOA, mname, rname, serial, refresh, retry, expire, minimum)
+                    rdata = SOA(
+                        dns.rdataclass.IN,
+                        dns.rdatatype.SOA,
+                        mname, rname, serial, refresh, retry, expire, minimum
+                    )
                     rdata_list.append(rdata)
+
                 else:
                     if isinstance(answer_data, str):
                         rdata_list = [dns.rdata.from_text(dns.rdataclass.IN, qtype, answer_data)]
                     else:
-                        rdata_list = [dns.rdata.from_text(dns.rdataclass.IN, qtype, data) for data in answer_data]
+                        rdata_list = [
+                            dns.rdata.from_text(dns.rdataclass.IN, qtype, data)
+                            for data in answer_data
+                        ]
+
+                rrset = dns.rrset.RRset(question.name, dns.rdataclass.IN, qtype)
+                rrset.ttl = 300
 
                 for rdata in rdata_list:
-                    response.answer.append(dns.rrset.RRset(question.name, dns.rdataclass.IN, qtype))
-                    response.answer[-1].add(rdata)
+                    rrset.add(rdata)
 
+                response.answer.append(rrset)
+
+            # Set Authoritative Answer (AA) flag
             response.flags |= 1 << 10
 
             print("Responding to request:", qname)
